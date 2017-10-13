@@ -137,7 +137,7 @@ const linkAssets = (project, assets) => {
  * @param config CLI config, see local-cli/core/index.js
  */
 
-function link(argv Array<string>, config, args) {
+function link(argv: Array<string>, config, args) {
   var project;
   try {
     project = config.getProjectConfig();
