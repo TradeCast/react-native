@@ -137,7 +137,7 @@ const linkAssets = (project, assets) => {
  * @param config CLI config, see local-cli/core/index.js
  */
 
-function link(argv: Array<string>,, config, args) {
+function link(argv: Array<string>, config, args) {
   var project;
 
   try {
@@ -150,8 +150,12 @@ function link(argv: Array<string>,, config, args) {
     return Promise.reject(err);
   }
 
+  let packageName = args[0];
+  // Check if install package by specific version (eg. package@latest)
+  if (packageName !== undefined) {
+    packageName = packageName.split('@')[0];
+  }
 
-  const packageName = argv[0];
   const packageTargetIos = args.targetIos;
   const packageTargetAndroid = args.targetAndroid;
 
@@ -164,13 +168,6 @@ function link(argv: Array<string>,, config, args) {
       'for more information.'
     );
   }
-
-  let packageName = args[0];
-  // Check if install package by specific version (eg. package@latest)
-  if (packageName !== undefined) {
-    packageName = packageName.split('@')[0];
-  }
-
 
   const dependencies = getDependencyConfig(
     config,
