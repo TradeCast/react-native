@@ -30,8 +30,9 @@ const getDependencyConfig = require('./getDependencyConfig');
 const pollParams = require('./pollParams');
 const commandStub = require('./commandStub');
 const promisify = require('./promisify');
+const findReactNativeScripts = require('../util/findReactNativeScripts');
 
-import type {ConfigT} from '../core';
+import type {RNConfig} from '../core';
 
 log.heading = 'rnpm-link';
 
@@ -135,8 +136,9 @@ const linkAssets = (project, assets) => {
  *             only that package is processed.
  * @param config CLI config, see local-cli/core/index.js
  */
-function link(argv, config, args) {
-    var project;
+
+function link(argv: Array<string>,, config, args) {
+  var project;
 
   try {
     project = config.getProjectConfig();
@@ -148,9 +150,27 @@ function link(argv, config, args) {
     return Promise.reject(err);
   }
 
+
   const packageName = argv[0];
   const packageTargetIos = args.targetIos;
   const packageTargetAndroid = args.targetAndroid;
+
+  if (!project.android && !project.ios && !project.windows && findReactNativeScripts()) {
+    throw new Error(
+      '`react-native link` can not be used in Create React Native App projects. ' +
+      'If you need to include a library that relies on custom native code, ' +
+      'you might have to eject first. ' +
+      'See https://github.com/react-community/create-react-native-app/blob/master/EJECTING.md ' +
+      'for more information.'
+    );
+  }
+
+  let packageName = args[0];
+  // Check if install package by specific version (eg. package@latest)
+  if (packageName !== undefined) {
+    packageName = packageName.split('@')[0];
+  }
+
 
   const dependencies = getDependencyConfig(
     config,
@@ -200,4 +220,3 @@ module.exports = {
     },
   ],
 };
-
