@@ -28,8 +28,9 @@ module.exports = function linkAssetsIOS(files, projectConfig) {
         path.relative(projectConfig.sourceDir, asset),
         { target: getTarget(project, projectConfig).uuid }
       )
-      .filter(file => file)   // xcode returns false if file is already there
-      .map(file => file.basename);
+    )
+  .filter(file => file)   // xcode returns false if file is already there
+  .map(file => file.basename);
 
   function addResourceFile(f) {
     return (f || [])
@@ -45,7 +46,6 @@ module.exports = function linkAssetsIOS(files, projectConfig) {
 
   addResourceFile(assets.image);
 
-  const fonts = addResourceFile(assets.font);
 
   const existingFonts = (plist.UIAppFonts || []);
   const allFonts = [...existingFonts, ...fonts];

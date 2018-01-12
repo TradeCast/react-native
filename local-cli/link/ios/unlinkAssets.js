@@ -37,6 +37,7 @@ module.exports = function unlinkAssetsIOS(files, projectConfig) {
         path.relative(projectConfig.sourceDir, asset),
         { target: getTarget(project, projectConfig).uuid }
       )
+    )
   .map(file => file.basename);
 
   const removeResourceFile = function (f) {
@@ -51,8 +52,6 @@ module.exports = function unlinkAssetsIOS(files, projectConfig) {
   };
 
   removeResourceFile(assets.image);
-
-  const fonts = removeResourceFile(assets.font);
 
   plist.UIAppFonts = difference(plist.UIAppFonts || [], fonts);
 
