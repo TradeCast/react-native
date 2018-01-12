@@ -11,6 +11,7 @@
 
 #import <React/RCTAssert.h>
 #import <React/RCTBridge+Private.h>
+#import <React/RCTDevSettings.h>
 #import <React/RCTLog.h>
 #import <React/RCTRootView.h>
 #import <React/RCTUtils.h>
@@ -23,12 +24,14 @@ static const NSTimeInterval kTestTimeoutSeconds = 120;
 @implementation RCTTestRunner
 {
   FBSnapshotTestController *_testController;
-  RCTBridgeModuleProviderBlock _moduleProvider;
+  RCTBridgeModuleListProvider _moduleProvider;
+  NSString *_appPath;
 }
 
 - (instancetype)initWithApp:(NSString *)app
          referenceDirectory:(NSString *)referenceDirectory
-             moduleProvider:(RCTBridgeModuleProviderBlock)block
+             moduleProvider:(RCTBridgeModuleListProvider)block
+                  scriptURL:(NSURL *)scriptURL
 {
   RCTAssertParam(app);
   RCTAssertParam(referenceDirectory);
@@ -43,18 +46,28 @@ static const NSTimeInterval kTestTimeoutSeconds = 120;
     _testController = [[FBSnapshotTestController alloc] initWithTestName:sanitizedAppName];
     _testController.referenceImagesDirectory = referenceDirectory;
     _moduleProvider = [block copy];
+    _appPath = app;
 
-    if (getenv("CI_USE_PACKAGER")) {
-      _scriptURL = [NSURL URLWithString:[NSString stringWithFormat:@"http://localhost:8081/%@.bundle?platform=ios&dev=true", app]];
+    if (scriptURL != nil) {
+      _scriptURL = scriptURL;
     } else {
-      _scriptURL = [[NSBundle bundleForClass:[RCTBridge class]] URLForResource:@"main" withExtension:@"jsbundle"];
+      [self updateScript];
     }
-    RCTAssert(_scriptURL != nil, @"No scriptURL set");
   }
   return self;
 }
 
 RCT_NOT_IMPLEMENTED(- (instancetype)init)
+
+- (void)updateScript
+{
+  if (getenv("CI_USE_PACKAGER") || _useBundler) {
+    _scriptURL = [NSURL URLWithString:[NSString stringWithFormat:@"http://localhost:8081/%@.bundle?platform=ios&dev=true", _appPath]];
+  } else {
+    _scriptURL = [[NSBundle bundleForClass:[RCTBridge class]] URLForResource:@"main" withExtension:@"jsbundle"];
+  }
+  RCTAssert(_scriptURL != nil, @"No scriptURL set");
+}
 
 - (void)setRecordMode:(BOOL)recordMode
 {
@@ -64,6 +77,12 @@ RCT_NOT_IMPLEMENTED(- (instancetype)init)
 - (BOOL)recordMode
 {
   return _testController.recordMode;
+}
+
+- (void)setUseBundler:(BOOL)useBundler
+{
+  _useBundler = useBundler;
+  [self updateScript];
 }
 
 - (void)runTest:(SEL)test module:(NSString *)moduleName
@@ -95,17 +114,26 @@ expectErrorRegex:(NSString *)errorRegex
 configurationBlock:(void(^)(RCTRootView *rootView))configurationBlock
 expectErrorBlock:(BOOL(^)(NSString *error))expectErrorBlock
 {
+  __weak RCTBridge *batchedBridge;
+
   @autoreleasepool {
-    __block NSString *error = nil;
+    __block NSMutableArray<NSString *> *errors = nil;
+    RCTLogFunction defaultLogFunction = RCTGetLogFunction();
     RCTSetLogFunction(^(RCTLogLevel level, RCTLogSource source, NSString *fileName, NSNumber *lineNumber, NSString *message) {
+      defaultLogFunction(level, source, fileName, lineNumber, message);
       if (level >= RCTLogLevelError) {
-        error = message;
+        if (errors == nil) {
+          errors = [NSMutableArray new];
+        }
+        [errors addObject:message];
       }
     });
 
     RCTBridge *bridge = [[RCTBridge alloc] initWithBundleURL:_scriptURL
                                               moduleProvider:_moduleProvider
                                                launchOptions:nil];
+    [bridge.devSettings setIsDebuggingRemotely:_useJSDebugger];
+    batchedBridge = [bridge batchedBridge];
 
     RCTRootView *rootView = [[RCTRootView alloc] initWithBridge:bridge moduleName:moduleName initialProperties:initialProps];
 #if TARGET_OS_TV
@@ -130,29 +158,41 @@ expectErrorBlock:(BOOL(^)(NSString *error))expectErrorBlock
     }
 
     NSDate *date = [NSDate dateWithTimeIntervalSinceNow:kTestTimeoutSeconds];
-    while (date.timeIntervalSinceNow > 0 && testModule.status == RCTTestStatusPending && error == nil) {
+    while (date.timeIntervalSinceNow > 0 && testModule.status == RCTTestStatusPending && errors == nil) {
       [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
       [[NSRunLoop mainRunLoop] runMode:NSRunLoopCommonModes beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
     }
 
     [rootView removeFromSuperview];
 
-    RCTSetLogFunction(RCTDefaultLogFunction);
+    RCTSetLogFunction(defaultLogFunction);
 
+#if RCT_DEV
     NSArray<UIView *> *nonLayoutSubviews = [vc.view.subviews filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(id subview, NSDictionary *bindings) {
       return ![NSStringFromClass([subview class]) isEqualToString:@"_UILayoutGuide"];
     }]];
+
     RCTAssert(nonLayoutSubviews.count == 0, @"There shouldn't be any other views: %@", nonLayoutSubviews);
+#endif
 
     if (expectErrorBlock) {
-      RCTAssert(expectErrorBlock(error), @"Expected an error but nothing matched.");
+      RCTAssert(expectErrorBlock(errors[0]), @"Expected an error but the first one was missing or did not match.");
     } else {
-      RCTAssert(error == nil, @"RedBox error: %@", error);
+      RCTAssert(errors == nil, @"RedBox errors: %@", errors);
       RCTAssert(testModule.status != RCTTestStatusPending, @"Test didn't finish within %0.f seconds", kTestTimeoutSeconds);
       RCTAssert(testModule.status == RCTTestStatusPassed, @"Test failed");
     }
+
     [bridge invalidate];
   }
+
+  // Wait for bridge to disappear before continuing to the next test
+  NSDate *invalidateTimeout = [NSDate dateWithTimeIntervalSinceNow:30];
+  while (invalidateTimeout.timeIntervalSinceNow > 0 && batchedBridge != nil) {
+    [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+    [[NSRunLoop mainRunLoop] runMode:NSRunLoopCommonModes beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+  }
+  RCTAssert(batchedBridge == nil, @"Bridge should be deallocated after the test");
 }
 
 @end

@@ -28,7 +28,13 @@ UNIMPLEMENTED_SYSTEM_JSC_FUNCTION(JSStringCreateWithUTF8CStringExpectAscii)
 #endif
 UNIMPLEMENTED_SYSTEM_JSC_FUNCTION(JSPokeSamplingProfiler)
 UNIMPLEMENTED_SYSTEM_JSC_FUNCTION(JSStartSamplingProfilingOnMainJSCThread)
+
+UNIMPLEMENTED_SYSTEM_JSC_FUNCTION(JSGlobalContextEnableDebugger)
+UNIMPLEMENTED_SYSTEM_JSC_FUNCTION(JSGlobalContextDisableDebugger)
+
 UNIMPLEMENTED_SYSTEM_JSC_FUNCTION(configureJSCForIOS)
+
+UNIMPLEMENTED_SYSTEM_JSC_FUNCTION(FBJSContextStartGCTimers)
 
 bool JSSamplingProfilerEnabled() {
   return false;
@@ -53,6 +59,9 @@ const JSCWrapper* systemJSCWrapper() {
 
       .JSContextGetGlobalContext = JSContextGetGlobalContext,
       .JSContextGetGlobalObject = JSContextGetGlobalObject,
+      .FBJSContextStartGCTimers =
+        (decltype(&FBJSContextStartGCTimers))
+        Unimplemented_FBJSContextStartGCTimers,
 
       .JSEvaluateScript = JSEvaluateScript,
       .JSEvaluateBytecodeBundle =
@@ -86,10 +95,12 @@ const JSCWrapper* systemJSCWrapper() {
       .JSObjectIsFunction = JSObjectIsFunction,
       .JSObjectMake = JSObjectMake,
       .JSObjectMakeArray = JSObjectMakeArray,
+      .JSObjectMakeDate = JSObjectMakeDate,
       .JSObjectMakeError = JSObjectMakeError,
       .JSObjectMakeFunctionWithCallback = JSObjectMakeFunctionWithCallback,
       .JSObjectSetPrivate = JSObjectSetPrivate,
       .JSObjectSetProperty = JSObjectSetProperty,
+      .JSObjectSetPropertyAtIndex = JSObjectSetPropertyAtIndex,
 
       .JSObjectCopyPropertyNames = JSObjectCopyPropertyNames,
       .JSPropertyNameArrayGetCount = JSPropertyNameArrayGetCount,
@@ -118,6 +129,13 @@ const JSCWrapper* systemJSCWrapper() {
       .JSStartSamplingProfilingOnMainJSCThread =
         (decltype(&JSStartSamplingProfilingOnMainJSCThread))
         Unimplemented_JSStartSamplingProfilingOnMainJSCThread,
+
+      .JSGlobalContextEnableDebugger =
+        (decltype(&JSGlobalContextEnableDebugger))
+        Unimplemented_JSGlobalContextEnableDebugger,
+      .JSGlobalContextDisableDebugger =
+        (decltype(&JSGlobalContextDisableDebugger))
+        Unimplemented_JSGlobalContextDisableDebugger,
 
       .configureJSCForIOS =
         (decltype(&configureJSCForIOS))Unimplemented_configureJSCForIOS,

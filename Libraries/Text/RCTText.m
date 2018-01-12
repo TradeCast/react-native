@@ -80,11 +80,6 @@ static void collectNonTextDescendants(RCTText *view, NSMutableArray *nonTextDesc
   }];
 }
 
-- (void)reactSetInheritedBackgroundColor:(UIColor *)inheritedBackgroundColor
-{
-  self.backgroundColor = inheritedBackgroundColor;
-}
-
 - (void)didUpdateReactSubviews
 {
   // Do nothing, as subviews are managed by `setTextStorage:` method
@@ -194,6 +189,10 @@ static void collectNonTextDescendants(RCTText *view, NSMutableArray *nonTextDesc
 
 - (NSString *)accessibilityLabel
 {
+  NSString *superAccessibilityLabel = [super accessibilityLabel];
+  if (superAccessibilityLabel) {
+    return superAccessibilityLabel;
+  }
   return _textStorage.string;
 }
 
@@ -236,11 +235,11 @@ static void collectNonTextDescendants(RCTText *view, NSMutableArray *nonTextDesc
 
 - (BOOL)canPerformAction:(SEL)action withSender:(id)sender
 {
-  if (action == @selector(copy:)) {
+  if (_selectable && action == @selector(copy:)) {
     return YES;
   }
-
-  return [super canPerformAction:action withSender:sender];
+  
+  return [self.nextResponder canPerformAction:action withSender:sender];
 }
 
 - (void)copy:(id)sender
