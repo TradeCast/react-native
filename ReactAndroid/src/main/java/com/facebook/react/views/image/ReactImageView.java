@@ -9,12 +9,6 @@
 
 package com.facebook.react.views.image;
 
-import javax.annotation.Nullable;
-
-import java.util.Arrays;
-import java.util.LinkedList;
-import java.util.List;
-
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapShader;
@@ -30,15 +24,13 @@ import android.graphics.drawable.Animatable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.widget.Toast;
-
 import com.facebook.common.util.UriUtil;
-import com.facebook.react.common.build.ReactBuildConfig;
-import com.facebook.yoga.YogaConstants;
 import com.facebook.drawee.controller.AbstractDraweeControllerBuilder;
 import com.facebook.drawee.controller.BaseControllerListener;
 import com.facebook.drawee.controller.ControllerListener;
 import com.facebook.drawee.controller.ForwardingControllerListener;
 import com.facebook.drawee.drawable.AutoRotateDrawable;
+import com.facebook.drawee.drawable.RoundedColorDrawable;
 import com.facebook.drawee.drawable.ScalingUtils;
 import com.facebook.drawee.generic.GenericDraweeHierarchy;
 import com.facebook.drawee.generic.GenericDraweeHierarchyBuilder;
@@ -46,6 +38,7 @@ import com.facebook.drawee.generic.RoundingParams;
 import com.facebook.drawee.view.GenericDraweeView;
 import com.facebook.imagepipeline.common.ResizeOptions;
 import com.facebook.imagepipeline.image.ImageInfo;
+import com.facebook.imagepipeline.postprocessors.IterativeBoxBlurPostProcessor;
 import com.facebook.imagepipeline.request.BasePostprocessor;
 import com.facebook.imagepipeline.request.ImageRequest;
 import com.facebook.imagepipeline.request.ImageRequestBuilder;
@@ -53,15 +46,21 @@ import com.facebook.imagepipeline.request.Postprocessor;
 import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableMap;
-import com.facebook.react.uimanager.FloatUtil;
+import com.facebook.react.common.build.ReactBuildConfig;
 import com.facebook.react.modules.fresco.ReactNetworkImageRequest;
+import com.facebook.react.uimanager.FloatUtil;
 import com.facebook.react.uimanager.PixelUtil;
 import com.facebook.react.uimanager.UIManagerModule;
 import com.facebook.react.uimanager.events.EventDispatcher;
 import com.facebook.react.views.imagehelper.ImageSource;
 import com.facebook.react.views.imagehelper.MultiSourceHelper;
-import com.facebook.react.views.imagehelper.ResourceDrawableIdHelper;
 import com.facebook.react.views.imagehelper.MultiSourceHelper.MultiSourceResult;
+import com.facebook.react.views.imagehelper.ResourceDrawableIdHelper;
+import com.facebook.yoga.YogaConstants;
+import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
+import javax.annotation.Nullable;
 
 /**
  * Wrapper class around Fresco's GenericDraweeView, enabling persisting props across multiple view
@@ -150,6 +149,7 @@ public class ReactImageView extends GenericDraweeView {
   private @Nullable ImageSource mImageSource;
   private @Nullable ImageSource mCachedImageSource;
   private @Nullable Drawable mLoadingImageDrawable;
+  private @Nullable RoundedColorDrawable mBackgroundImageDrawable;
   private int mBorderColor;
   private int mOverlayColor;
   private float mBorderWidth;
@@ -159,8 +159,10 @@ public class ReactImageView extends GenericDraweeView {
   private boolean mIsDirty;
   private final AbstractDraweeControllerBuilder mDraweeControllerBuilder;
   private final RoundedCornerPostprocessor mRoundedCornerPostprocessor;
+  private @Nullable IterativeBoxBlurPostProcessor mIterativeBoxBlurPostProcessor;
   private @Nullable ControllerListener mControllerListener;
   private @Nullable ControllerListener mControllerForTesting;
+  private @Nullable GlobalImageLoadListener mGlobalImageLoadListener;
   private final @Nullable Object mCallerContext;
   private int mFadeDurationMs = -1;
   private boolean mProgressiveRenderingEnabled;
@@ -176,11 +178,13 @@ public class ReactImageView extends GenericDraweeView {
   public ReactImageView(
       Context context,
       AbstractDraweeControllerBuilder draweeControllerBuilder,
+      @Nullable GlobalImageLoadListener globalImageLoadListener,
       @Nullable Object callerContext) {
     super(context, buildHierarchy(context));
     mScaleType = ImageResizeMode.defaultValue();
     mDraweeControllerBuilder = draweeControllerBuilder;
     mRoundedCornerPostprocessor = new RoundedCornerPostprocessor();
+    mGlobalImageLoadListener = globalImageLoadListener;
     mCallerContext = callerContext;
     mSources = new LinkedList<>();
   }
@@ -223,6 +227,22 @@ public class ReactImageView extends GenericDraweeView {
       };
     }
 
+    mIsDirty = true;
+  }
+
+  public void setBlurRadius(float blurRadius) {
+    int pixelBlurRadius = (int) PixelUtil.toPixelFromDIP(blurRadius);
+    if (pixelBlurRadius == 0) {
+      mIterativeBoxBlurPostProcessor = null;
+    } else {
+      mIterativeBoxBlurPostProcessor = new IterativeBoxBlurPostProcessor(pixelBlurRadius);
+    }
+    mIsDirty = true;
+  }
+
+  @Override
+  public void setBackgroundColor(int backgroundColor) {
+    mBackgroundImageDrawable = new RoundedColorDrawable(backgroundColor);
     mIsDirty = true;
   }
 
@@ -326,7 +346,7 @@ public class ReactImageView extends GenericDraweeView {
     computedCorners[2] = mBorderCornerRadii != null && !YogaConstants.isUndefined(mBorderCornerRadii[2]) ? mBorderCornerRadii[2] : defaultBorderRadius;
     computedCorners[3] = mBorderCornerRadii != null && !YogaConstants.isUndefined(mBorderCornerRadii[3]) ? mBorderCornerRadii[3] : defaultBorderRadius;
   }
-  
+
   public void setHeaders(ReadableMap headers) {
     mHeaders = headers;
   }
@@ -365,12 +385,17 @@ public class ReactImageView extends GenericDraweeView {
 
     RoundingParams roundingParams = hierarchy.getRoundingParams();
 
+    cornerRadii(sComputedCornerRadii);
+    roundingParams.setCornersRadii(sComputedCornerRadii[0], sComputedCornerRadii[1], sComputedCornerRadii[2], sComputedCornerRadii[3]);
+
+    if (mBackgroundImageDrawable != null) {
+      mBackgroundImageDrawable.setBorder(mBorderColor, mBorderWidth);
+      mBackgroundImageDrawable.setRadii(roundingParams.getCornersRadii());
+      hierarchy.setBackgroundImage(mBackgroundImageDrawable);
+    }
+
     if (usePostprocessorScaling) {
       roundingParams.setCornersRadius(0);
-    } else {
-      cornerRadii(sComputedCornerRadii);
-
-      roundingParams.setCornersRadii(sComputedCornerRadii[0], sComputedCornerRadii[1], sComputedCornerRadii[2], sComputedCornerRadii[3]);
     }
 
     roundingParams.setBorder(mBorderColor, mBorderWidth);
@@ -386,7 +411,13 @@ public class ReactImageView extends GenericDraweeView {
             ? mFadeDurationMs
             : mImageSource.isResource() ? 0 : REMOTE_IMAGE_FADE_DURATION_MS);
 
-    Postprocessor postprocessor = usePostprocessorScaling ? mRoundedCornerPostprocessor : null;
+    // TODO: t13601664 Support multiple PostProcessors
+    Postprocessor postprocessor = null;
+    if (usePostprocessorScaling) {
+      postprocessor = mRoundedCornerPostprocessor;
+    } else if (mIterativeBoxBlurPostProcessor != null) {
+      postprocessor = mIterativeBoxBlurPostProcessor;
+    }
 
     ResizeOptions resizeOptions = doResize ? new ResizeOptions(getWidth(), getHeight()) : null;
 
@@ -397,6 +428,10 @@ public class ReactImageView extends GenericDraweeView {
         .setProgressiveRenderingEnabled(mProgressiveRenderingEnabled);
 
     ImageRequest imageRequest = ReactNetworkImageRequest.fromBuilderWithHeaders(imageRequestBuilder, mHeaders);
+
+    if (mGlobalImageLoadListener != null) {
+      mGlobalImageLoadListener.onLoadAttempt(mImageSource.getUri());
+    }
 
     // This builder is reused
     mDraweeControllerBuilder.reset();
@@ -431,6 +466,10 @@ public class ReactImageView extends GenericDraweeView {
 
     setController(mDraweeControllerBuilder.build());
     mIsDirty = false;
+
+    // Reset again so the DraweeControllerBuilder clears all it's references. Otherwise, this causes
+    // a memory leak.
+    mDraweeControllerBuilder.reset();
   }
 
   // VisibleForTesting
