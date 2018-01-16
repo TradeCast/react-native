@@ -149,7 +149,7 @@ const linkAssets = (project, assets) => {
  *             only that package is processed.
  * @param config CLI config, see local-cli/core/index.js
  */
-function link(args: Array<string>, config: RNConfig) {
+function link(argv: Array<string>, config: RNConfig, args: Array<string>) {
   var project;
   try {
     project = config.getProjectConfig();
@@ -171,7 +171,9 @@ function link(args: Array<string>, config: RNConfig) {
     );
   }
 
-  let packageName = args[0];
+  const packageName = argv[0];
+  const packageTargetIos = args.targetIos;
+  const packageTargetAndroid = args.targetAndroid;
   // Check if install package by specific version (eg. package@latest)
   if (packageName !== undefined) {
     packageName = packageName.split('@')[0];
@@ -181,6 +183,10 @@ function link(args: Array<string>, config: RNConfig) {
     config,
     packageName ? [packageName] : getProjectDependencies()
   );
+
+  if (packageTargetIos && project.ios) {
+    project.ios.target = packageTargetIos;
+  }
 
   const assets = dedupeAssets(dependencies.reduce(
     (assets, dependency) => assets.concat(dependency.config.assets),
@@ -210,4 +216,14 @@ module.exports = {
   func: link,
   description: 'links all native dependencies (updates native build files)',
   name: 'link [packageName]',
+  options: [
+    {
+      command: '--target-ios [string]',
+      description: 'Use a specific ios project target',
+    },
+    {
+      command: '--target-android [string]',
+      description: 'Use a specific android project target',
+    },
+  ],
 };

@@ -2,10 +2,13 @@ const fs = require('fs-extra');
 const path = require('path');
 const xcode = require('xcode');
 const log = require('npmlog');
+const plistParser = require('plist');
 const groupFilesByType = require('../groupFilesByType');
 const createGroupWithMessage = require('./createGroupWithMessage');
 const getPlist = require('./getPlist');
 const writePlist = require('./writePlist');
+const getPlistPath = require('./getPlistPath');
+const getTarget = require('./getTarget');
 
 /**
  * This function works in a similar manner to its Android version,
@@ -14,7 +17,7 @@ const writePlist = require('./writePlist');
 module.exports = function linkAssetsIOS(files, projectConfig) {
   const project = xcode.project(projectConfig.pbxprojPath).parseSync();
   const assets = groupFilesByType(files);
-  const plist = getPlist(project, projectConfig.sourceDir);
+  const plist = getPlist(project, projectConfig.sourceDir, projectConfig);
 
   createGroupWithMessage(project, 'Resources');
 
@@ -26,8 +29,19 @@ module.exports = function linkAssetsIOS(files, projectConfig) {
           { target: project.getFirstTarget().uuid }
         )
       )
-      .filter(file => file)   // xcode returns false if file is already there
-      .map(file => file.basename);
+    .filter(file => file)   // xcode returns false if file is already there
+    .map(file => file.basename);
+  }
+
+  const fonts = (assets.font || [])
+    .map(asset =>
+      project.addResourceFile(
+        path.relative(projectConfig.sourceDir, asset),
+        { target: getTarget(project, projectConfig).uuid }
+      )
+    )
+    .filter(file => file)   // xcode returns false if file is already there
+    .map(file => file.basename);
   }
 
   addResourceFile(assets.image);
@@ -44,4 +58,8 @@ module.exports = function linkAssetsIOS(files, projectConfig) {
   );
 
   writePlist(project, projectConfig.sourceDir, plist);
+  fs.writeFileSync(
+    getPlistPath(project, projectConfig.sourceDir, projectConfig),
+    plistParser.build(plist)
+  );
 };

@@ -6,6 +6,7 @@ const groupFilesByType = require('../groupFilesByType');
 const getPlist = require('./getPlist');
 const writePlist = require('./writePlist');
 const difference = require('lodash').difference;
+const getTarget = require('./getTarget');
 
 /**
  * Unlinks assets from iOS project. Removes references for fonts from `Info.plist`
@@ -14,7 +15,7 @@ const difference = require('lodash').difference;
 module.exports = function unlinkAssetsIOS(files, projectConfig) {
   const project = xcode.project(projectConfig.pbxprojPath).parseSync();
   const assets = groupFilesByType(files);
-  const plist = getPlist(project, projectConfig.sourceDir);
+  const plist = getPlist(project, projectConfig.sourceDir, projectConfig);
 
   if (!plist) {
     return log.error(
@@ -41,6 +42,16 @@ module.exports = function unlinkAssetsIOS(files, projectConfig) {
       .map(file => file.basename);
   };
 
+  const fonts = (assets.font || [])
+    .map(asset =>
+      project.removeResourceFile(
+        path.relative(projectConfig.sourceDir, asset),
+        { target: getTarget(project, projectConfig).uuid }
+      )
+    )
+    .map(file => file.basename);
+  };
+
   removeResourceFile(assets.image);
 
   const fonts = removeResourceFile(assets.font);
@@ -53,4 +64,8 @@ module.exports = function unlinkAssetsIOS(files, projectConfig) {
   );
 
   writePlist(project, projectConfig.sourceDir, plist);
+  fs.writeFileSync(
+    getPlistPath(project, projectConfig.sourceDir, projectConfig),
+    plistParser.build(plist)
+  );
 };
