@@ -42,11 +42,8 @@ module.exports = function linkAssetsIOS(files, projectConfig) {
     )
     .filter(file => file)   // xcode returns false if file is already there
     .map(file => file.basename);
-  }
 
   addResourceFile(assets.image);
-
-  const fonts = addResourceFile(assets.font);
 
   const existingFonts = (plist.UIAppFonts || []);
   const allFonts = [...existingFonts, ...fonts];

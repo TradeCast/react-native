@@ -50,11 +50,8 @@ module.exports = function unlinkAssetsIOS(files, projectConfig) {
       )
     )
     .map(file => file.basename);
-  };
 
   removeResourceFile(assets.image);
-
-  const fonts = removeResourceFile(assets.font);
 
   plist.UIAppFonts = difference(plist.UIAppFonts || [], fonts);
 
